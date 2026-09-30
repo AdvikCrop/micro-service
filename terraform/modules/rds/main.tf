@@ -23,6 +23,7 @@ resource "aws_db_instance" "user_db" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [var.rds_security_group_id]
 
+  multi_az                  = var.environment == "prod" ? true : false
   skip_final_snapshot       = var.environment == "dev" ? true : false
   final_snapshot_identifier = "${var.project_name}-user-db-final-snapshot-${var.environment}"
 
@@ -53,6 +54,7 @@ resource "aws_db_instance" "order_db" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [var.rds_security_group_id]
 
+  multi_az                  = var.environment == "prod" ? true : false
   skip_final_snapshot       = var.environment == "dev" ? true : false
   final_snapshot_identifier = "${var.project_name}-order-db-final-snapshot-${var.environment}"
 

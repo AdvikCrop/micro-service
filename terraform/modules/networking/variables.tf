@@ -27,3 +27,15 @@ variable "availability_zones" {
   description = "Availability zones"
   type        = list(string)
 }
+
+variable "enable_nat_per_az" {
+  description = "Enable NAT gateway per AZ for HA (prod) vs single NAT (dev)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_enhanced_security" {
+  description = "Enable enhanced security groups for prod"
+  type        = bool
+  default     = false
+}
