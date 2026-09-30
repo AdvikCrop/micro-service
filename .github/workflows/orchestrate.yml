@@ -445,7 +445,7 @@ jobs:
       - name: Build and push user-service
         if: ${{ matrix.service == 'user-service' }}
         id: user-service
-        uses: ./.github/actions/build-and-push-image
+        uses: ./.github/actions/build-and-push-image/
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
@@ -458,7 +458,7 @@ jobs:
       - name: Build and push order-service
         if: ${{ matrix.service == 'order-service' }}
         id: order-service
-        uses: ./.github/actions/build-and-push-image
+        uses: ./.github/actions/build-and-push-image/
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
@@ -532,7 +532,7 @@ jobs:
           echo "Terraform Version: ${{ env.TERRAFORM_VERSION }}"
 
       - name: Deploy infrastructure
-        uses: ./.github/actions/deploy-infrastructure
+        uses: ./.github/actions/deploy-infrastructure/
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
@@ -570,7 +570,7 @@ jobs:
 
       - name: Deploy to dev EKS
         if: ${{ needs.determine-config.outputs.app_env == 'dev' }}
-        uses: ./.github/actions/deploy-application
+        uses: ./.github/actions/deploy-application/
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
@@ -588,7 +588,7 @@ jobs:
 
       - name: Deploy to prod EKS
         if: ${{ needs.determine-config.outputs.app_env == 'prod' }}
-        uses: ./.github/actions/deploy-application
+        uses: ./.github/actions/deploy-application/
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
