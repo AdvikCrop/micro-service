@@ -1,0 +1,53 @@
+repos:
+  # Terraform formatting and validation
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.88.0
+    hooks:
+      - id: terraform_fmt
+        args: [--args=-recursive]
+      - id: terraform_validate
+        args: [--args=-backend=false]
+      - id: terraform_docs
+        args: [--args=--sort-by-required]
+      - id: terraform_tflint
+        args: [--args=--format compact]
+
+  # YAML validation
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.33.0
+    hooks:
+      - id: yamllint
+        args: [--config-data='{extends: default, rules: {line-length: {max: 120}, indentation: {spaces: 2}}}']
+
+  # JSON validation
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.28.1
+    hooks:
+      - id: check-jsonschema
+        name: Validate GitHub Actions
+        files: ^\.github/workflows/
+        types: [yaml]
+
+  # Security checks
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.2
+    hooks:
+      - id: gitleaks
+
+  # General checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Shell script checks
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]

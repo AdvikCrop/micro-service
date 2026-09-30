@@ -1,0 +1,46 @@
+replicaCount: 3
+
+environment: prod
+aws_region: us-east-1
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+database:
+  host: postgres-prod.c9akciq32.ng.0001.use1.cache.amazonaws.com
+  port: 5432
+  user: postgres
+
+ingress:
+  enabled: true
+  className: "alb"
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    acm-ssl: "true"
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERT_ID
+  hosts:
+    - host: api.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: tls-secret
+      hosts:
+        - api.example.com
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

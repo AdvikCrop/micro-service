@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat)",
+      "Bash(bash /tmp/repo_audit.sh)",
+      "Bash(terraform fmt *)",
+      "Bash(terraform init *)",
+      "Bash(rm -f WORKFLOW_CONSOLIDATION.md)",
+      "Bash(rm -f CONSOLIDATION_COMPLETE.md)",
+      "Bash(rm -f CONSOLIDATION_SUMMARY.txt)",
+      "Bash(rm -f POST_CONSOLIDATION_CHECKLIST.md)",
+      "Bash(rm -f EKS_DEPLOYMENT_SUMMARY.md)",
+      "Bash(rm -f FINAL_DELIVERY_SUMMARY.md)",
+      "Bash(rm -f GITHUB_ACTIONS_SETUP.md)",
+      "Bash(rm -f GITHUB_ACTIONS_TEMPLATES.md)",
+      "Bash(rm -f INDEX.md)"
+    ]
+  }
+}

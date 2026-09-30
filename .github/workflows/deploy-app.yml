@@ -1,0 +1,184 @@
+name: Deploy Application
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy (dev, prod)'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      user-service-tag:
+        description: 'User service image tag (commit SHA)'
+        required: true
+      order-service-tag:
+        description: 'Order service image tag (commit SHA)'
+        required: true
+  workflow_run:
+    workflows: ['Build and Deploy to EKS']
+    types: [completed]
+    branches:
+      - develop
+      - main
+
+env:
+  AWS_REGION: us-east-1
+  HELM_CHART_PATH: './helm'
+  HELM_RELEASE_NAME: 'microservices-app'
+  HELM_NAMESPACE: 'default'
+
+jobs:
+  determine-env:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      cluster-name: ${{ steps.set-env.outputs.cluster-name }}
+      helm-values: ${{ steps.set-env.outputs.helm-values }}
+      user-service-tag: ${{ steps.set-env.outputs.user-service-tag }}
+      order-service-tag: ${{ steps.set-env.outputs.order-service-tag }}
+    steps:
+      - name: Determine environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+            USER_TAG="${{ github.event.inputs.user-service-tag }}"
+            ORDER_TAG="${{ github.event.inputs.order-service-tag }}"
+          elif [ "${{ github.ref }}" == "refs/heads/develop" ]; then
+            ENV="dev"
+            USER_TAG="${{ github.sha }}"
+            ORDER_TAG="${{ github.sha }}"
+          else
+            ENV="prod"
+            USER_TAG="${{ github.sha }}"
+            ORDER_TAG="${{ github.sha }}"
+          fi
+
+          case "$ENV" in
+            dev)
+              CLUSTER="microservices-dev-eks"
+              VALUES="helm/values-dev.yaml"
+              ;;
+            prod)
+              CLUSTER="microservices-prod-eks"
+              VALUES="helm/values-prod.yaml"
+              ;;
+          esac
+
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+          echo "cluster-name=$CLUSTER" >> $GITHUB_OUTPUT
+          echo "helm-values=$VALUES" >> $GITHUB_OUTPUT
+          echo "user-service-tag=$USER_TAG" >> $GITHUB_OUTPUT
+          echo "order-service-tag=$ORDER_TAG" >> $GITHUB_OUTPUT
+
+  deploy-app:
+    needs: determine-env
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: ${{ needs.determine-env.outputs.environment }}
+    steps:
+      - name: Deploy application
+        uses: ./.github/actions/deploy-application
+        with:
+          aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          aws-region: ${{ env.AWS_REGION }}
+          cluster-name: ${{ needs.determine-env.outputs.cluster-name }}
+          environment: ${{ needs.determine-env.outputs.environment }}
+          helm-chart-path: ${{ env.HELM_CHART_PATH }}
+          helm-release-name: ${{ env.HELM_RELEASE_NAME }}
+          helm-namespace: ${{ env.HELM_NAMESPACE }}
+          helm-values-file: ${{ needs.determine-env.outputs.helm-values }}
+          user-service-image-tag: ${{ needs.determine-env.outputs.user-service-tag }}
+          order-service-image-tag: ${{ needs.determine-env.outputs.order-service-tag }}
+          aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          helm-timeout: '10m'
+          wait-for-rollout: 'true'
+
+  verify-deployment:
+    needs: [determine-env, deploy-app]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ needs.determine-env.outputs.cluster-name }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests..."
+          echo ""
+
+          # Check if pods are running
+          echo "Checking pod status..."
+          RUNNING_PODS=$(kubectl get pods -n ${{ env.HELM_NAMESPACE }} \
+            -l app.kubernetes.io/instance=${{ env.HELM_RELEASE_NAME }} \
+            --field-selector=status.phase=Running -o json | jq '.items | length')
+
+          echo "Running pods: $RUNNING_PODS"
+
+          if [ "$RUNNING_PODS" -gt 0 ]; then
+            echo "✅ Pods are running"
+          else
+            echo "❌ No running pods found"
+            exit 1
+          fi
+
+          # Check service endpoints
+          echo ""
+          echo "Checking service endpoints..."
+          kubectl get endpoints -n ${{ env.HELM_NAMESPACE }} \
+            -l app.kubernetes.io/instance=${{ env.HELM_RELEASE_NAME }}
+
+          # Check ingress
+          echo ""
+          echo "Checking ingress status..."
+          kubectl get ingress -n ${{ env.HELM_NAMESPACE }}
+
+      - name: Get application logs
+        if: always()
+        run: |
+          echo "## Application Logs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "**Deployment Status**:" >> $GITHUB_STEP_SUMMARY
+          kubectl get deployments -n ${{ env.HELM_NAMESPACE }} >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "**Pod Status**:" >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n ${{ env.HELM_NAMESPACE }} -l app.kubernetes.io/instance=${{ env.HELM_RELEASE_NAME }} >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "**Services**:" >> $GITHUB_STEP_SUMMARY
+          kubectl get svc -n ${{ env.HELM_NAMESPACE }} -l app.kubernetes.io/instance=${{ env.HELM_RELEASE_NAME }} >> $GITHUB_STEP_SUMMARY
+
+  notification:
+    needs: [determine-env, verify-deployment]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Deployment completed
+        run: |
+          echo "## Application Deployment Completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: ${{ needs.determine-env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Cluster**: ${{ needs.determine-env.outputs.cluster-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**User Service Tag**: ${{ needs.determine-env.outputs.user-service-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Order Service Tag**: ${{ needs.determine-env.outputs.order-service-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ needs.verify-deployment.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Deployment workflow completed" >> $GITHUB_STEP_SUMMARY

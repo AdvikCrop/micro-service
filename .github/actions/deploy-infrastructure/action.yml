@@ -1,0 +1,168 @@
+name: 'Deploy Infrastructure with Terraform'
+description: 'Initialize, plan, and apply Terraform infrastructure'
+
+inputs:
+  aws-account-id:
+    description: 'AWS Account ID'
+    required: true
+  aws-region:
+    description: 'AWS Region'
+    required: true
+    default: 'us-east-1'
+  terraform-version:
+    description: 'Terraform version to use'
+    required: false
+    default: '1.5.0'
+  environment:
+    description: 'Environment (dev, prod)'
+    required: true
+  terraform-dir:
+    description: 'Terraform directory path'
+    required: true
+    default: 'terraform/environments'
+  tfvars-file:
+    description: 'Path to terraform.tfvars file'
+    required: true
+  aws-role-to-assume:
+    description: 'AWS IAM role to assume for OIDC'
+    required: true
+  state-bucket:
+    description: 'S3 bucket for Terraform state'
+    required: true
+  state-key:
+    description: 'S3 key for Terraform state'
+    required: true
+  action:
+    description: 'Terraform action (plan or apply)'
+    required: false
+    default: 'plan'
+
+outputs:
+  plan-exists:
+    description: 'Whether terraform plan was created'
+    value: ${{ steps.plan.outputs.plan-exists }}
+  apply-summary:
+    description: 'Summary of apply results'
+    value: ${{ steps.apply.outputs.summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.aws-role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+
+    - name: Terraform Format Check
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "Checking Terraform format..."
+        terraform fmt -check -recursive || {
+          echo "❌ Terraform files are not formatted correctly"
+          echo "Run: terraform fmt -recursive"
+          exit 1
+        }
+        echo "✅ Terraform format check passed"
+
+    - name: Terraform Init
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "Initializing Terraform..."
+        terraform init \
+          -backend-config="bucket=${{ inputs.state-bucket }}" \
+          -backend-config="key=${{ inputs.state-key }}" \
+          -backend-config="region=${{ inputs.aws-region }}" \
+          -backend-config="encrypt=true"
+        echo "✅ Terraform initialized"
+
+    - name: Terraform Validate
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "Validating Terraform configuration..."
+        terraform validate
+        echo "✅ Terraform validation passed"
+
+    - name: Terraform Plan
+      id: plan
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "Creating Terraform plan..."
+        terraform plan \
+          -var-file="${{ inputs.tfvars-file }}" \
+          -out=tfplan \
+          -detailed-exitcode || EXIT_CODE=$?
+
+        if [ "${EXIT_CODE:-0}" -eq 0 ]; then
+          echo "✅ No infrastructure changes"
+          echo "plan-exists=false" >> $GITHUB_OUTPUT
+        elif [ "${EXIT_CODE:-0}" -eq 2 ]; then
+          echo "✅ Infrastructure changes detected"
+          echo "plan-exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Terraform plan failed"
+          exit 1
+        fi
+
+    - name: Upload Terraform Plan
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-plan-${{ inputs.environment }}
+        path: ${{ inputs.terraform-dir }}/${{ inputs.environment }}/tfplan
+        retention-days: 7
+
+    - name: Terraform Apply
+      id: apply
+      if: inputs.action == 'apply' && steps.plan.outputs.plan-exists == 'true'
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "Applying Terraform changes..."
+        terraform apply \
+          -auto-approve \
+          -input=false \
+          tfplan
+        echo "✅ Terraform apply completed"
+        echo "summary=Terraform infrastructure deployed successfully" >> $GITHUB_OUTPUT
+
+    - name: Get Terraform Outputs
+      if: inputs.action == 'apply'
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "📋 Terraform Outputs:"
+        terraform output
+        echo ""
+        echo "Saving outputs to file..."
+        terraform output -json > terraform-outputs.json
+
+    - name: Upload Terraform Outputs
+      if: inputs.action == 'apply' && always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: terraform-outputs-${{ inputs.environment }}
+        path: ${{ inputs.terraform-dir }}/${{ inputs.environment }}/terraform-outputs.json
+        retention-days: 30
+
+    - name: Show Plan Summary
+      if: steps.plan.outputs.plan-exists == 'true'
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "📊 Infrastructure Changes:"
+        terraform plan \
+          -var-file="${{ inputs.tfvars-file }}" \
+          -no-color | grep -E "^(Plan:|No changes|.*create|.*update|.*destroy)" || true

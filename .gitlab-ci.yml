@@ -1,0 +1,161 @@
+stages:
+  - validate
+  - test
+  - build
+  - security_scan
+  - deploy_dev
+  - deploy_prod
+
+variables:
+  REGISTRY: registry.gitlab.com
+  REGISTRY_USER: ${CI_REGISTRY_USER}
+  REGISTRY_PASSWORD: ${CI_REGISTRY_PASSWORD}
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  USER_SERVICE_IMAGE: ${REGISTRY}/${CI_PROJECT_PATH}/user-service:${CI_COMMIT_SHA}
+  ORDER_SERVICE_IMAGE: ${REGISTRY}/${CI_PROJECT_PATH}/order-service:${CI_COMMIT_SHA}
+
+validate:lint:
+  stage: validate
+  image: python:3.11
+  script:
+    - pip install flake8 black isort
+    - flake8 services/ --max-line-length=100 --ignore=E501,W503
+    - black --check services/ || true
+    - isort --check-only services/ || true
+  allow_failure: true
+
+validate:terraform:
+  stage: validate
+  image: hashicorp/terraform:latest
+  script:
+    - cd terraform
+    - terraform init -backend=false
+    - terraform validate
+  allow_failure: true
+
+test:user-service:
+  stage: test
+  image: python:3.11
+  services:
+    - postgres:15
+  variables:
+    POSTGRES_DB: users_db
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    DB_HOST: postgres
+  script:
+    - cd services/user-service
+    - pip install -r requirements.txt
+    - pytest tests/ -v --cov=app --cov-report=xml
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: services/user-service/coverage.xml
+
+test:order-service:
+  stage: test
+  image: python:3.11
+  services:
+    - postgres:15
+  variables:
+    POSTGRES_DB: orders_db
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    DB_HOST: postgres
+  script:
+    - cd services/order-service
+    - pip install -r requirements.txt
+    - pytest tests/ -v --cov=app --cov-report=xml
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: services/order-service/coverage.xml
+
+build:user-service:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${REGISTRY}
+    - docker build -t ${USER_SERVICE_IMAGE} -t ${REGISTRY}/${CI_PROJECT_PATH}/user-service:latest ./services/user-service
+    - docker push ${USER_SERVICE_IMAGE}
+    - docker push ${REGISTRY}/${CI_PROJECT_PATH}/user-service:latest
+  only:
+    - main
+    - develop
+
+build:order-service:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker login -u ${REGISTRY_USER} -p ${REGISTRY_PASSWORD} ${REGISTRY}
+    - docker build -t ${ORDER_SERVICE_IMAGE} -t ${REGISTRY}/${CI_PROJECT_PATH}/order-service:latest ./services/order-service
+    - docker push ${ORDER_SERVICE_IMAGE}
+    - docker push ${REGISTRY}/${CI_PROJECT_PATH}/order-service:latest
+  only:
+    - main
+    - develop
+
+security:trivy:
+  stage: security_scan
+  image: aquasec/trivy:latest
+  script:
+    - trivy image --severity HIGH,CRITICAL ${USER_SERVICE_IMAGE}
+    - trivy image --severity HIGH,CRITICAL ${ORDER_SERVICE_IMAGE}
+  allow_failure: true
+  only:
+    - main
+    - develop
+
+security:sast:
+  stage: security_scan
+  image: python:3.11
+  script:
+    - pip install bandit
+    - bandit -r services/ -f json -o bandit-report.json || true
+  artifacts:
+    reports:
+      sast: bandit-report.json
+  allow_failure: true
+
+deploy:dev:
+  stage: deploy_dev
+  image: alpine/helm:latest
+  script:
+    - echo "Deploying to dev environment..."
+    - |
+      curl -X POST \
+        -H "Content-Type: application/json" \
+        -d '{"ref":"'${CI_COMMIT_SHA}'","environment":"dev"}' \
+        ${DEPLOY_WEBHOOK_DEV}
+  environment:
+    name: development
+    deployment_tier: development
+  only:
+    - develop
+  when: manual
+
+deploy:prod:
+  stage: deploy_prod
+  image: alpine/helm:latest
+  script:
+    - echo "Deploying to prod environment..."
+    - |
+      curl -X POST \
+        -H "Content-Type: application/json" \
+        -d '{"ref":"'${CI_COMMIT_SHA}'","environment":"prod"}' \
+        ${DEPLOY_WEBHOOK_PROD}
+  environment:
+    name: production
+    deployment_tier: production
+  only:
+    - main
+  when: manual

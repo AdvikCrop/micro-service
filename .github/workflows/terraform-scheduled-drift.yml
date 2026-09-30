@@ -1,0 +1,119 @@
+name: Scheduled Terraform Drift Detection
+
+on:
+  schedule:
+    # Run drift detection every 6 hours
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_VERSION: 1.5.0
+
+jobs:
+  drift-detection:
+    name: Drift Detection - ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, prod]
+      fail-fast: false
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: ${{ matrix.environment }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        id: init
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: |
+          echo "Initializing Terraform for scheduled drift detection..."
+          terraform init \
+            -backend-config="bucket=${{ secrets.TERRAFORM_STATE_BUCKET }}" \
+            -backend-config="key=microservices/${{ matrix.environment }}/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="dynamodb_table=${{ secrets.TERRAFORM_LOCK_TABLE }}" \
+            -upgrade
+          echo "✅ Terraform initialized"
+
+      - name: Refresh Terraform State
+        id: refresh
+        working-directory: terraform/environments/${{ matrix.environment }}
+        continue-on-error: true
+        run: |
+          echo "Refreshing Terraform state from AWS..."
+          terraform refresh \
+            -var-file="terraform.tfvars" \
+            -lock=false \
+            2>&1 | tee refresh.log
+
+          REFRESH_EXIT=$?
+          [ $REFRESH_EXIT -eq 0 ] && echo "refresh_status=SUCCESS" >> $GITHUB_OUTPUT
+          [ $REFRESH_EXIT -ne 0 ] && echo "refresh_status=FAILED" >> $GITHUB_OUTPUT
+
+      - name: Detect Drift with Plan
+        id: drift
+        if: steps.refresh.outputs.refresh_status == 'SUCCESS'
+        working-directory: terraform/environments/${{ matrix.environment }}
+        continue-on-error: true
+        run: |
+          echo "Running plan to detect infrastructure drift..."
+          terraform plan \
+            -var-file="terraform.tfvars" \
+            -detailed-exitcode \
+            -lock=false \
+            -refresh=true \
+            2>&1 | tee drift.log
+
+          DRIFT_EXIT=$?
+          [ $DRIFT_EXIT -eq 0 ] && echo "drift_status=NO_DRIFT" >> $GITHUB_OUTPUT
+          [ $DRIFT_EXIT -eq 2 ] && echo "drift_status=DRIFT_DETECTED" >> $GITHUB_OUTPUT
+          [ $DRIFT_EXIT -gt 2 ] && echo "drift_status=CHECK_FAILED" >> $GITHUB_OUTPUT
+
+      - name: Upload Drift Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduled-drift-log-${{ matrix.environment }}-${{ github.run_id }}
+          path: terraform/environments/${{ matrix.environment }}/drift.log
+          retention-days: 30
+
+  summary:
+    name: Scheduled Drift Summary
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [drift-detection]
+    steps:
+      - name: Generate drift detection summary
+        run: |
+          echo "## 🔄 Scheduled Terraform Drift Detection" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: Drift detection completed for dev and prod environments" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Environments Scanned" >> $GITHUB_STEP_SUMMARY
+          echo "- Dev: ${{ needs.drift-detection.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Prod: ${{ needs.drift-detection.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "If drift is detected:" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review the drift log artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "2. Create a PR to update Terraform configuration" >> $GITHUB_STEP_SUMMARY
+          echo "3. Or run terraform apply to remediate (manual approval required)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifacts**: Check the run artifacts for detailed drift logs" >> $GITHUB_STEP_SUMMARY
