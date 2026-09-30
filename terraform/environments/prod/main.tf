@@ -5,14 +5,14 @@ locals {
 module "networking" {
   source = "../../modules/networking"
 
-  project_name              = var.project_name
-  environment               = local.environment
-  vpc_cidr                  = var.vpc_cidr
-  public_subnet_cidrs       = var.public_subnet_cidrs
-  private_subnet_cidrs      = var.private_subnet_cidrs
-  availability_zones        = var.availability_zones
-  enable_nat_per_az         = true
-  enable_enhanced_security  = true
+  project_name             = var.project_name
+  environment              = local.environment
+  vpc_cidr                 = var.vpc_cidr
+  public_subnet_cidrs      = var.public_subnet_cidrs
+  private_subnet_cidrs     = var.private_subnet_cidrs
+  availability_zones       = var.availability_zones
+  enable_nat_per_az        = true
+  enable_enhanced_security = true
 }
 
 module "rds" {
