@@ -101,3 +101,38 @@ variable "container_memory" {
   type        = number
   default     = 1024
 }
+
+variable "db_secret_arn" {
+  description = "ARN of the RDS database credentials secret"
+  type        = string
+}
+
+variable "kubernetes_version" {
+  description = "Kubernetes version for EKS"
+  type        = string
+  default     = "1.28"
+}
+
+variable "eks_desired_size" {
+  description = "Desired number of worker nodes"
+  type        = number
+  default     = 2
+}
+
+variable "eks_min_size" {
+  description = "Minimum number of worker nodes"
+  type        = number
+  default     = 1
+}
+
+variable "eks_max_size" {
+  description = "Maximum number of worker nodes"
+  type        = number
+  default     = 5
+}
+
+variable "eks_instance_types" {
+  description = "EC2 instance types for EKS worker nodes"
+  type        = list(string)
+  default     = ["t3.medium"]
+}

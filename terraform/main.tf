@@ -1,33 +1,30 @@
-locals {
-  environment = "dev"
-}
-
 data "aws_secretsmanager_secret_version" "db_credentials" {
   secret_id = var.db_secret_arn
 }
 
 locals {
   db_credentials = jsondecode(data.aws_secretsmanager_secret_version.db_credentials.secret_string)
+  is_prod        = var.environment == "prod"
 }
 
 module "networking" {
-  source = "../../modules/networking"
+  source = "./modules/networking"
 
   project_name             = var.project_name
-  environment              = local.environment
+  environment              = var.environment
   vpc_cidr                 = var.vpc_cidr
   public_subnet_cidrs      = var.public_subnet_cidrs
   private_subnet_cidrs     = var.private_subnet_cidrs
   availability_zones       = var.availability_zones
-  enable_nat_per_az        = false
-  enable_enhanced_security = false
+  enable_nat_per_az        = local.is_prod
+  enable_enhanced_security = local.is_prod
 }
 
 module "rds" {
-  source = "../../modules/rds"
+  source = "./modules/rds"
 
   project_name          = var.project_name
-  environment           = local.environment
+  environment           = var.environment
   private_subnet_ids    = module.networking.private_subnet_ids
   rds_security_group_id = module.networking.rds_security_group_id
   db_instance_class     = var.db_instance_class
@@ -37,13 +34,13 @@ module "rds" {
 }
 
 resource "aws_lb" "main" {
-  name               = "${var.project_name}-alb-${local.environment}"
+  name               = "${var.project_name}-alb-${var.environment}"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [module.networking.alb_security_group_id]
   subnets            = module.networking.public_subnet_ids
 
-  enable_deletion_protection = false
+  enable_deletion_protection = local.is_prod
 
   tags = {
     Name = "${var.project_name}-alb"
@@ -136,10 +133,10 @@ resource "aws_lb_listener_rule" "order_service" {
 }
 
 module "ecs" {
-  source = "../../modules/ecs"
+  source = "./modules/ecs"
 
   project_name                   = var.project_name
-  environment                    = local.environment
+  environment                    = var.environment
   aws_region                     = var.aws_region
   user_service_image             = var.user_service_image
   order_service_image            = var.order_service_image
@@ -157,10 +154,10 @@ module "ecs" {
 }
 
 module "eks" {
-  source = "../../modules/eks"
+  source = "./modules/eks"
 
   project_name       = var.project_name
-  environment        = local.environment
+  environment        = var.environment
   vpc_id             = module.networking.vpc_id
   vpc_cidr           = var.vpc_cidr
   private_subnet_ids = module.networking.private_subnet_ids
@@ -170,5 +167,5 @@ module "eks" {
   min_size           = var.eks_min_size
   max_size           = var.eks_max_size
   instance_types     = var.eks_instance_types
-  log_retention_days = 7
+  log_retention_days = local.is_prod ? 30 : 7
 }

@@ -1,6 +1,7 @@
 aws_region         = "us-east-1"
+environment        = "prod"
 project_name       = "microservices"
-container_registry = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev"
+container_registry = "023644376175.dkr.ecr.us-east-1.amazonaws.com/prod"
 
 vpc_cidr             = "10.1.0.0/16"
 public_subnet_cidrs  = ["10.1.1.0/24", "10.1.2.0/24", "10.1.3.0/24"]
@@ -16,8 +17,8 @@ desired_count    = 3
 container_cpu    = 1024
 container_memory = 2048
 
-user_service_image  = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/user-service:latest"
-order_service_image = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/order-service:latest"
+user_service_image  = "023644376175.dkr.ecr.us-east-1.amazonaws.com/prod:user-service"
+order_service_image = "023644376175.dkr.ecr.us-east-1.amazonaws.com/prod:order-service"
 kubernetes_version  = "1.28"
 eks_desired_size    = 3
 eks_min_size        = 2

@@ -1,4 +1,5 @@
 aws_region         = "us-east-1"
+environment        = "dev"
 project_name       = "microservices"
 container_registry = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev"
 
@@ -16,8 +17,8 @@ desired_count    = 1
 container_cpu    = 256
 container_memory = 512
 
-user_service_image  = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/services:user-service"
-order_service_image = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/services:order-service"
+user_service_image  = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev:user-service"
+order_service_image = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev:order-service"
 kubernetes_version  = "1.36"
 eks_desired_size    = 1
 eks_min_size        = 1

@@ -15,32 +15,42 @@ output "order_service_url" {
 
 output "user_db_endpoint" {
   description = "User database endpoint"
-  value       = aws_db_instance.user_db.endpoint
+  value       = module.rds.user_db_endpoint
   sensitive   = true
 }
 
 output "order_db_endpoint" {
   description = "Order database endpoint"
-  value       = aws_db_instance.order_db.endpoint
+  value       = module.rds.order_db_endpoint
   sensitive   = true
 }
 
 output "ecs_cluster_name" {
   description = "ECS cluster name"
-  value       = aws_ecs_cluster.main.name
+  value       = module.ecs.ecs_cluster_name
 }
 
 output "user_service_task_definition" {
   description = "User service task definition"
-  value       = aws_ecs_task_definition.user_service.arn
+  value       = module.ecs.user_service_task_definition_arn
 }
 
 output "order_service_task_definition" {
   description = "Order service task definition"
-  value       = aws_ecs_task_definition.order_service.arn
+  value       = module.ecs.order_service_task_definition_arn
 }
 
 output "cloudwatch_log_group" {
   description = "CloudWatch log group"
-  value       = aws_cloudwatch_log_group.ecs.name
+  value       = module.ecs.cloudwatch_log_group_name
+}
+
+output "eks_cluster_id" {
+  description = "EKS cluster ID"
+  value       = module.eks.cluster_id
+}
+
+output "eks_cluster_endpoint" {
+  description = "EKS cluster endpoint"
+  value       = module.eks.cluster_endpoint
 }
