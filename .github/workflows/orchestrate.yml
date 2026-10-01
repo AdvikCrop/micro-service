@@ -250,7 +250,7 @@ jobs:
   # ============================================================================
   terraform-plan:
     name: Terraform Plan - ${{ matrix.environment }}
-    needs: [validate, build-images]
+    needs: validate
     if: ${{ github.event.inputs.terraform_plan != 'false' }}
     runs-on: ubuntu-latest
     strategy:
@@ -350,7 +350,7 @@ jobs:
 
   terraform-drift:
     name: Drift Detection - ${{ matrix.environment }}
-    needs: [validate, build-images]
+    needs: validate
     if: ${{ github.event.inputs.terraform_plan != 'false' }}
     runs-on: ubuntu-latest
     strategy:
@@ -432,7 +432,7 @@ jobs:
   # STAGE 3: BUILD DOCKER IMAGES
   # ============================================================================
   build-images:
-    needs: [determine-config, validate, test]
+    needs: [determine-config, test]
     if: ${{ needs.determine-config.outputs.build_images == 'true' }}
     runs-on: ubuntu-latest
     permissions:
