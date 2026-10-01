@@ -531,6 +531,9 @@ jobs:
     environment:
       name: ${{ needs.determine-config.outputs.infra_env }}
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Display infrastructure deployment parameters
         run: |
           echo "🏗️  Infrastructure Deployment"
