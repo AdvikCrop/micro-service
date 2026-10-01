@@ -147,8 +147,7 @@ module "ecs" {
   ecs_tasks_security_group_id    = module.networking.ecs_tasks_security_group_id
   user_db_endpoint               = module.rds.user_db_endpoint
   order_db_endpoint              = module.rds.order_db_endpoint
-  db_username_secret_arn         = aws_secretsmanager_secret.db_username.arn
-  db_password_secret_arn         = aws_secretsmanager_secret.db_password.arn
+  db_secret_arn                  = var.db_secret_arn
   user_service_target_group_arn  = aws_lb_target_group.user_service.arn
   order_service_target_group_arn = aws_lb_target_group.order_service.arn
   container_port                 = var.container_port

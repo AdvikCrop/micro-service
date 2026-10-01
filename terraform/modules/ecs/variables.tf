@@ -45,14 +45,8 @@ variable "order_db_endpoint" {
   sensitive   = true
 }
 
-variable "db_username_secret_arn" {
-  description = "Database username secret ARN"
-  type        = string
-  sensitive   = true
-}
-
-variable "db_password_secret_arn" {
-  description = "Database password secret ARN"
+variable "db_secret_arn" {
+  description = "Database credentials secret ARN"
   type        = string
   sensitive   = true
 }

@@ -1,3 +1,11 @@
+data "aws_secretsmanager_secret_version" "db_credentials" {
+  secret_id = var.db_secret_arn
+}
+
+locals {
+  db_credentials = jsondecode(data.aws_secretsmanager_secret_version.db_credentials.secret_string)
+}
+
 resource "aws_ecs_cluster" "main" {
   name = "${var.project_name}-cluster-${var.environment}"
 
@@ -105,16 +113,14 @@ resource "aws_ecs_task_definition" "user_service" {
         {
           name  = "DB_NAME"
           value = "users_db"
-        }
-      ]
-      secrets = [
-        {
-          name      = "DB_USER"
-          valueFrom = var.db_username_secret_arn
         },
         {
-          name      = "DB_PASSWORD"
-          valueFrom = var.db_password_secret_arn
+          name  = "DB_USER"
+          value = local.db_credentials.username
+        },
+        {
+          name  = "DB_PASSWORD"
+          value = local.db_credentials.password
         }
       ]
       logConfiguration = {
@@ -168,16 +174,14 @@ resource "aws_ecs_task_definition" "order_service" {
         {
           name  = "DB_NAME"
           value = "orders_db"
-        }
-      ]
-      secrets = [
-        {
-          name      = "DB_USER"
-          valueFrom = var.db_username_secret_arn
         },
         {
-          name      = "DB_PASSWORD"
-          valueFrom = var.db_password_secret_arn
+          name  = "DB_USER"
+          value = local.db_credentials.username
+        },
+        {
+          name  = "DB_PASSWORD"
+          value = local.db_credentials.password
         }
       ]
       logConfiguration = {
