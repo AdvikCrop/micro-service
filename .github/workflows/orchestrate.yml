@@ -257,11 +257,17 @@ jobs:
       matrix:
         environment: [dev, prod]
       fail-fast: false
+    outputs:
+      dev-adds: ${{ steps.parse_plan.outputs.resources_to_add }}
+      dev-updates: ${{ steps.parse_plan.outputs.resources_to_update }}
+      dev-deletes: ${{ steps.parse_plan.outputs.resources_to_delete }}
+      dev-status: ${{ steps.plan.outputs.plan_status }}
+      dev-adds-list: ${{ steps.parse_plan.outputs.adds_list }}
+      dev-updates-list: ${{ steps.parse_plan.outputs.updates_list }}
+      dev-deletes-list: ${{ steps.parse_plan.outputs.deletes_list }}
     permissions:
       id-token: write
       contents: read
-    environment:
-      name: ${{ matrix.environment }}
     steps:
       - uses: actions/checkout@v4
 
@@ -329,9 +335,34 @@ jobs:
           UPDATES=$(echo "$PLAN_JSON" | jq '[.resource_changes[]? | select(.change.actions[] == "update")] | length' 2>/dev/null || echo "0")
           DELETES=$(echo "$PLAN_JSON" | jq '[.resource_changes[]? | select(.change.actions[] == "delete")] | length' 2>/dev/null || echo "0")
 
+          # Get resource names for each action
+          ADDS_LIST=$(echo "$PLAN_JSON" | jq -r '[.resource_changes[]? | select(.change.actions[] == "create") | .address] | join(", ")' 2>/dev/null || echo "")
+          UPDATES_LIST=$(echo "$PLAN_JSON" | jq -r '[.resource_changes[]? | select(.change.actions[] == "update") | .address] | join(", ")' 2>/dev/null || echo "")
+          DELETES_LIST=$(echo "$PLAN_JSON" | jq -r '[.resource_changes[]? | select(.change.actions[] == "delete") | .address] | join(", ")' 2>/dev/null || echo "")
+
           echo "resources_to_add=$ADDS" >> $GITHUB_OUTPUT
           echo "resources_to_update=$UPDATES" >> $GITHUB_OUTPUT
           echo "resources_to_delete=$DELETES" >> $GITHUB_OUTPUT
+          echo "adds_list=$ADDS_LIST" >> $GITHUB_OUTPUT
+          echo "updates_list=$UPDATES_LIST" >> $GITHUB_OUTPUT
+          echo "deletes_list=$DELETES_LIST" >> $GITHUB_OUTPUT
+
+      - name: Display Plan Summary
+        if: steps.plan.outputs.plan_status != 'FAILED'
+        working-directory: terraform/environments/${{ matrix.environment }}
+        run: |
+          echo "📋 TERRAFORM PLAN SUMMARY - ${{ matrix.environment }}"
+          echo ""
+          echo "Resources to ADD:    ${{ steps.parse_plan.outputs.resources_to_add }}"
+          echo "Resources to UPDATE: ${{ steps.parse_plan.outputs.resources_to_update }}"
+          echo "Resources to DELETE: ${{ steps.parse_plan.outputs.resources_to_delete }}"
+          echo ""
+          echo "🔍 DETAILED PLAN WITH VALUES:"
+          echo "============================================"
+          terraform show -no-color tfplan 2>/dev/null | grep -A 5 -E "(resource|~|->|+|-):|Plan:" || terraform show -no-color tfplan | head -300
+          echo "============================================"
+          echo ""
+          echo "Full plan saved in artifacts: terraform-plan-log-${{ matrix.environment }}-${{ github.run_id }}"
 
       - name: Upload Terraform Plan
         if: steps.plan.outputs.plan_status != 'FAILED'
@@ -598,6 +629,9 @@ jobs:
           echo "- Deploy Application: ${{ needs.deployment-config.outputs.deploy_app }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
+          echo "⚠️ **REVIEW PLAN BEFORE APPROVAL** - See details below" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
           echo "### Stages Executed" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
@@ -609,6 +643,38 @@ jobs:
           echo "| Deploy Infrastructure | ${{ needs.deploy-infrastructure.result }} ${{ needs.deployment-config.outputs.deploy_infra == 'true' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Deploy Application | ${{ needs.deploy-application.result }} ${{ needs.deployment-config.outputs.deploy_app == 'true' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "### Terraform Plan Changes" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | Add | Update | Delete | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|-----|--------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| dev | ${{ needs.terraform-plan.outputs.dev-adds }} | ${{ needs.terraform-plan.outputs.dev-updates }} | ${{ needs.terraform-plan.outputs.dev-deletes }} | ${{ needs.terraform-plan.outputs.dev-status }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.terraform-plan.outputs.dev-adds }}" != "0" ] && [ -n "${{ needs.terraform-plan.outputs.dev-adds-list }}" ]; then
+            echo "#### 🟢 Resources to CREATE (${{ needs.terraform-plan.outputs.dev-adds }}):" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ needs.terraform-plan.outputs.dev-adds-list }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.terraform-plan.outputs.dev-updates }}" != "0" ] && [ -n "${{ needs.terraform-plan.outputs.dev-updates-list }}" ]; then
+            echo "#### 🟡 Resources to UPDATE (${{ needs.terraform-plan.outputs.dev-updates }}):" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ needs.terraform-plan.outputs.dev-updates-list }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> **To see detailed field changes**, check the 'Terraform Plan - dev' job logs for full attribute diff" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.terraform-plan.outputs.dev-deletes }}" != "0" ] && [ -n "${{ needs.terraform-plan.outputs.dev-deletes-list }}" ]; then
+            echo "#### 🔴 Resources to DELETE (${{ needs.terraform-plan.outputs.dev-deletes }}):" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "${{ needs.terraform-plan.outputs.dev-deletes-list }}" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
 
           echo "### Environment Details" >> $GITHUB_STEP_SUMMARY
           echo "- User Service Tag: ${{ needs.deployment-config.outputs.user_tag }}" >> $GITHUB_STEP_SUMMARY
