@@ -25,6 +25,10 @@ inputs:
     description: 'Environment tag (latest, develop, etc.)'
     required: false
     default: 'latest'
+  ecr-repository:
+    description: 'ECR repository name (dev, prod)'
+    required: false
+    default: 'dev'
 
 outputs:
   image-uri:
@@ -55,7 +59,7 @@ runs:
       shell: bash
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: dev
+        ECR_REPOSITORY: ${{ inputs.ecr-repository }}
         SERVICE_NAME: ${{ inputs.service-name }}
         IMAGE_TAG: ${{ inputs.image-tag }}
         ENV_TAG: ${{ inputs.environment-tag }}

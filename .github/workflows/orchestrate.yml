@@ -120,7 +120,7 @@ jobs:
   # ============================================================================
   # DETERMINE CONFIGURATION
   # ============================================================================
-  determine-config:
+  deployment-config:
     runs-on: ubuntu-latest
     outputs:
       build_images: ${{ steps.config.outputs.build_images }}
@@ -181,7 +181,7 @@ jobs:
   # ============================================================================
   # STAGE 1: VALIDATE & TEST
   # ============================================================================
-  validate:
+  quality-checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -201,7 +201,7 @@ jobs:
         continue-on-error: true
 
   test:
-    needs: validate
+    needs: quality-checks
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.run_tests != 'false' }}
     strategy:
@@ -250,7 +250,7 @@ jobs:
   # ============================================================================
   terraform-plan:
     name: Terraform Plan - ${{ matrix.environment }}
-    needs: validate
+    needs: quality-checks
     if: ${{ github.event.inputs.terraform_plan != 'false' }}
     runs-on: ubuntu-latest
     strategy:
@@ -353,14 +353,14 @@ jobs:
   # STAGE 3: BUILD DOCKER IMAGES
   # ============================================================================
   build-images:
-    needs: [determine-config]
-    if: ${{ needs.determine-config.outputs.build_images == 'true' }}
+    needs: [deployment-config]
+    if: ${{ needs.deployment-config.outputs.build_images == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     environment:
-      name: ${{ needs.determine-config.outputs.app_env == 'prod' && 'prod' || 'build' }}
+      name: ${{ needs.deployment-config.outputs.app_env == 'prod' && 'prod' || 'build' }}
     strategy:
       matrix:
         service:
@@ -381,9 +381,10 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           service-name: user-service
           dockerfile-path: ./services/user-service
-          image-tag: ${{ needs.determine-config.outputs.user_tag }}
+          image-tag: ${{ needs.deployment-config.outputs.user_tag }}
           aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          environment-tag: ${{ needs.determine-config.outputs.app_env == 'prod' && 'latest' || 'develop' }}
+          environment-tag: ${{ needs.deployment-config.outputs.app_env == 'prod' && 'latest' || 'develop' }}
+          ecr-repository: ${{ needs.deployment-config.outputs.app_env }}
 
       - name: Build and push order-service
         if: ${{ matrix.service == 'order-service' && (github.event.inputs.build_services == 'all' || github.event.inputs.build_services == 'order-service') }}
@@ -394,16 +395,17 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
           service-name: order-service
           dockerfile-path: ./services/order-service
-          image-tag: ${{ needs.determine-config.outputs.order_tag }}
+          image-tag: ${{ needs.deployment-config.outputs.order_tag }}
           aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
-          environment-tag: ${{ needs.determine-config.outputs.app_env == 'prod' && 'latest' || 'develop' }}
+          environment-tag: ${{ needs.deployment-config.outputs.app_env == 'prod' && 'latest' || 'develop' }}
+          ecr-repository: ${{ needs.deployment-config.outputs.app_env }}
 
   # ============================================================================
   # STAGE 4: SECURITY SCANNING
   # ============================================================================
   security-scan:
-    needs: [determine-config, build-images]
-    if: ${{ github.event.inputs.run_security_scan != 'false' && needs.determine-config.outputs.build_images == 'true' }}
+    needs: [deployment-config, build-images]
+    if: ${{ github.event.inputs.run_security_scan != 'false' && needs.deployment-config.outputs.build_images == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -445,14 +447,14 @@ jobs:
   # STAGE 5: DEPLOY INFRASTRUCTURE
   # ============================================================================
   deploy-infrastructure:
-    needs: [determine-config, validate, terraform-plan]
-    if: ${{ needs.determine-config.outputs.deploy_infra == 'true' && github.event.inputs.infra_action == 'apply' }}
+    needs: [deployment-config, quality-checks, terraform-plan]
+    if: ${{ needs.deployment-config.outputs.deploy_infra == 'true' && github.event.inputs.infra_action == 'apply' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     environment:
-      name: ${{ needs.determine-config.outputs.infra_env == 'prod' && 'prod' || 'dev' }}
+      name: ${{ needs.deployment-config.outputs.infra_env == 'prod' && 'prod' || 'dev' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -460,7 +462,7 @@ jobs:
       - name: Display infrastructure deployment parameters
         run: |
           echo "🏗️  Infrastructure Deployment"
-          echo "Environment: ${{ needs.determine-config.outputs.infra_env }}"
+          echo "Environment: ${{ needs.deployment-config.outputs.infra_env }}"
           echo "Action: ${{ github.event.inputs.infra_action }}"
           echo "Terraform Version: ${{ env.TERRAFORM_VERSION }}"
 
@@ -470,26 +472,26 @@ jobs:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
           terraform-version: ${{ env.TERRAFORM_VERSION }}
-          environment: ${{ needs.determine-config.outputs.infra_env }}
+          environment: ${{ needs.deployment-config.outputs.infra_env }}
           terraform-dir: 'terraform/environments'
-          tfvars-file: 'terraform/environments/${{ needs.determine-config.outputs.infra_env }}/terraform.tfvars'
+          tfvars-file: 'terraform/environments/${{ needs.deployment-config.outputs.infra_env }}/terraform.tfvars'
           aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           state-bucket: ${{ secrets.TERRAFORM_STATE_BUCKET }}
-          state-key: 'microservices/${{ needs.determine-config.outputs.infra_env }}/terraform.tfstate'
+          state-key: 'microservices/${{ needs.deployment-config.outputs.infra_env }}/terraform.tfstate'
           action: ${{ github.event.inputs.infra_action }}
 
   # ============================================================================
   # STAGE 5B: DESTROY INFRASTRUCTURE (APPROVAL GATE)
   # ============================================================================
   destroy-infrastructure:
-    needs: [determine-config, validate]
+    needs: [deployment-config, quality-checks]
     if: ${{ github.event.inputs.destroy_infrastructure == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     environment:
-      name: ${{ needs.determine-config.outputs.infra_env == 'prod' && 'prod' || 'dev' }}
+      name: ${{ needs.deployment-config.outputs.infra_env == 'prod' && 'prod' || 'dev' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -497,12 +499,12 @@ jobs:
       - name: Display infrastructure destruction parameters
         run: |
           echo "🔥 Infrastructure Destruction"
-          echo "Environment: ${{ needs.determine-config.outputs.infra_env }}"
+          echo "Environment: ${{ needs.deployment-config.outputs.infra_env }}"
           echo "Action: destroy"
           echo "Terraform Version: ${{ env.TERRAFORM_VERSION }}"
           echo ""
-          echo "⚠️  WARNING: This will DESTROY all infrastructure in ${{ needs.determine-config.outputs.infra_env }}"
-          echo "✅ Approval GRANTED by GitHub Environment: ${{ needs.determine-config.outputs.infra_env }}"
+          echo "⚠️  WARNING: This will DESTROY all infrastructure in ${{ needs.deployment-config.outputs.infra_env }}"
+          echo "✅ Approval GRANTED by GitHub Environment: ${{ needs.deployment-config.outputs.infra_env }}"
 
       - name: Destroy infrastructure
         uses: ./.github/actions/deploy-infrastructure/
@@ -510,69 +512,69 @@ jobs:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
           terraform-version: ${{ env.TERRAFORM_VERSION }}
-          environment: ${{ needs.determine-config.outputs.infra_env }}
+          environment: ${{ needs.deployment-config.outputs.infra_env }}
           terraform-dir: 'terraform/environments'
-          tfvars-file: 'terraform/environments/${{ needs.determine-config.outputs.infra_env }}/terraform.tfvars'
+          tfvars-file: 'terraform/environments/${{ needs.deployment-config.outputs.infra_env }}/terraform.tfvars'
           aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           state-bucket: ${{ secrets.TERRAFORM_STATE_BUCKET }}
-          state-key: 'microservices/${{ needs.determine-config.outputs.infra_env }}/terraform.tfstate'
+          state-key: 'microservices/${{ needs.deployment-config.outputs.infra_env }}/terraform.tfstate'
           action: 'destroy'
 
   # ============================================================================
   # STAGE 6: DEPLOY APPLICATION
   # ============================================================================
   deploy-application:
-    needs: [determine-config, build-images, deploy-infrastructure, security-scan]
-    if: ${{ needs.determine-config.outputs.deploy_app == 'true' && (github.event.inputs.deploy_infrastructure == 'false' || github.event.inputs.infra_action == 'apply' || success()) }}
+    needs: [deployment-config, build-images, deploy-infrastructure, security-scan]
+    if: ${{ needs.deployment-config.outputs.deploy_app == 'true' && (github.event.inputs.deploy_infrastructure == 'false' || github.event.inputs.infra_action == 'apply' || success()) }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     environment:
-      name: ${{ needs.determine-config.outputs.app_env }}
+      name: ${{ needs.deployment-config.outputs.app_env }}
     steps:
       - name: Display application deployment parameters
         run: |
           echo "🚀 Application Deployment"
-          echo "Environment: ${{ needs.determine-config.outputs.app_env }}"
-          echo "Cluster: ${{ needs.determine-config.outputs.app_env == 'dev' && needs.determine-config.outputs.cluster_name_dev || needs.determine-config.outputs.cluster_name_prod }}"
-          echo "User Service Tag: ${{ needs.determine-config.outputs.user_tag }}"
-          echo "Order Service Tag: ${{ needs.determine-config.outputs.order_tag }}"
+          echo "Environment: ${{ needs.deployment-config.outputs.app_env }}"
+          echo "Cluster: ${{ needs.deployment-config.outputs.app_env == 'dev' && needs.deployment-config.outputs.cluster_name_dev || needs.deployment-config.outputs.cluster_name_prod }}"
+          echo "User Service Tag: ${{ needs.deployment-config.outputs.user_tag }}"
+          echo "Order Service Tag: ${{ needs.deployment-config.outputs.order_tag }}"
           echo "Helm Timeout: ${{ github.event.inputs.helm_timeout }}"
           echo "Wait for Rollout: ${{ github.event.inputs.wait_for_rollout }}"
 
       - name: Deploy to dev EKS
-        if: ${{ needs.determine-config.outputs.app_env == 'dev' }}
+        if: ${{ needs.deployment-config.outputs.app_env == 'dev' }}
         uses: ./.github/actions/deploy-application/
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
-          cluster-name: ${{ needs.determine-config.outputs.cluster_name_dev }}
+          cluster-name: ${{ needs.deployment-config.outputs.cluster_name_dev }}
           environment: dev
           helm-chart-path: ${{ env.HELM_CHART_PATH }}
           helm-release-name: ${{ env.HELM_RELEASE_NAME }}
           helm-namespace: ${{ env.HELM_NAMESPACE }}
-          helm-values-file: ${{ needs.determine-config.outputs.helm_values_dev }}
-          user-service-image-tag: ${{ needs.determine-config.outputs.user_tag }}
-          order-service-image-tag: ${{ needs.determine-config.outputs.order_tag }}
+          helm-values-file: ${{ needs.deployment-config.outputs.helm_values_dev }}
+          user-service-image-tag: ${{ needs.deployment-config.outputs.user_tag }}
+          order-service-image-tag: ${{ needs.deployment-config.outputs.order_tag }}
           aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           helm-timeout: ${{ github.event.inputs.helm_timeout }}
           wait-for-rollout: ${{ github.event.inputs.wait_for_rollout }}
 
       - name: Deploy to prod EKS
-        if: ${{ needs.determine-config.outputs.app_env == 'prod' }}
+        if: ${{ needs.deployment-config.outputs.app_env == 'prod' }}
         uses: ./.github/actions/deploy-application/
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
-          cluster-name: ${{ needs.determine-config.outputs.cluster_name_prod }}
+          cluster-name: ${{ needs.deployment-config.outputs.cluster_name_prod }}
           environment: prod
           helm-chart-path: ${{ env.HELM_CHART_PATH }}
           helm-release-name: ${{ env.HELM_RELEASE_NAME }}
           helm-namespace: ${{ env.HELM_NAMESPACE }}
-          helm-values-file: ${{ needs.determine-config.outputs.helm_values_prod }}
-          user-service-image-tag: ${{ needs.determine-config.outputs.user_tag }}
-          order-service-image-tag: ${{ needs.determine-config.outputs.order_tag }}
+          helm-values-file: ${{ needs.deployment-config.outputs.helm_values_prod }}
+          user-service-image-tag: ${{ needs.deployment-config.outputs.user_tag }}
+          order-service-image-tag: ${{ needs.deployment-config.outputs.order_tag }}
           aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           helm-timeout: ${{ github.event.inputs.helm_timeout }}
           wait-for-rollout: ${{ github.event.inputs.wait_for_rollout }}
@@ -581,7 +583,7 @@ jobs:
   # FINAL: SUMMARY & NOTIFICATIONS
   # ============================================================================
   summary:
-    needs: [determine-config, validate, test, terraform-plan, build-images, security-scan, deploy-infrastructure, deploy-application]
+    needs: [deployment-config, quality-checks, test, terraform-plan, build-images, security-scan, deploy-infrastructure, deploy-application]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -591,28 +593,28 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "- Build Images: ${{ needs.determine-config.outputs.build_images }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Deploy Infrastructure: ${{ needs.determine-config.outputs.deploy_infra }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Deploy Application: ${{ needs.determine-config.outputs.deploy_app }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Build Images: ${{ needs.deployment-config.outputs.build_images }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Deploy Infrastructure: ${{ needs.deployment-config.outputs.deploy_infra }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Deploy Application: ${{ needs.deployment-config.outputs.deploy_app }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Stages Executed" >> $GITHUB_STEP_SUMMARY
           echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Validate | ${{ needs.validate.result }} ✓ |" >> $GITHUB_STEP_SUMMARY
+          echo "| Quality Checks | ${{ needs.quality-checks.result }} ✓ |" >> $GITHUB_STEP_SUMMARY
           echo "| Test | ${{ needs.test.result }} ✓ |" >> $GITHUB_STEP_SUMMARY
           echo "| Terraform Plan | ${{ needs.terraform-plan.result }} ✓ |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Images | ${{ needs.build-images.result }} ${{ needs.determine-config.outputs.build_images == 'true' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Images | ${{ needs.build-images.result }} ${{ needs.deployment-config.outputs.build_images == 'true' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security Scan | ${{ needs.security-scan.result }} ${{ github.event.inputs.run_security_scan != 'false' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Deploy Infrastructure | ${{ needs.deploy-infrastructure.result }} ${{ needs.determine-config.outputs.deploy_infra == 'true' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Deploy Application | ${{ needs.deploy-application.result }} ${{ needs.determine-config.outputs.deploy_app == 'true' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Infrastructure | ${{ needs.deploy-infrastructure.result }} ${{ needs.deployment-config.outputs.deploy_infra == 'true' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deploy Application | ${{ needs.deploy-application.result }} ${{ needs.deployment-config.outputs.deploy_app == 'true' && '✓' || '⊘' }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           echo "### Environment Details" >> $GITHUB_STEP_SUMMARY
-          echo "- User Service Tag: ${{ needs.determine-config.outputs.user_tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Order Service Tag: ${{ needs.determine-config.outputs.order_tag }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Infrastructure Env: ${{ needs.determine-config.outputs.infra_env }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Application Env: ${{ needs.determine-config.outputs.app_env }}" >> $GITHUB_STEP_SUMMARY
+          echo "- User Service Tag: ${{ needs.deployment-config.outputs.user_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Order Service Tag: ${{ needs.deployment-config.outputs.order_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Infrastructure Env: ${{ needs.deployment-config.outputs.infra_env }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Application Env: ${{ needs.deployment-config.outputs.app_env }}" >> $GITHUB_STEP_SUMMARY
           echo "- Helm Timeout: ${{ github.event.inputs.helm_timeout }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
@@ -633,9 +635,9 @@ jobs:
           echo "✅ CI/CD Orchestration Workflow Completed"
           echo "=========================================="
           echo ""
-          echo "Build Images: ${{ needs.determine-config.outputs.build_images }}"
-          echo "Deploy Infrastructure: ${{ needs.determine-config.outputs.deploy_infra }}"
-          echo "Deploy Application: ${{ needs.determine-config.outputs.deploy_app }}"
+          echo "Build Images: ${{ needs.deployment-config.outputs.build_images }}"
+          echo "Deploy Infrastructure: ${{ needs.deployment-config.outputs.deploy_infra }}"
+          echo "Deploy Application: ${{ needs.deployment-config.outputs.deploy_app }}"
           echo ""
           echo "Overall Status: ${{ job.status }}"
 
