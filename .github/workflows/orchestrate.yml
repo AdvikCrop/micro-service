@@ -454,7 +454,7 @@ jobs:
       id-token: write
       contents: read
     environment:
-      name: ${{ needs.deployment-config.outputs.infra_env == 'prod' && 'prod' || 'dev' }}
+      name: ${{ needs.deployment-config.outputs.infra_env }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
