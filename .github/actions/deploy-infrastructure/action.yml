@@ -101,7 +101,7 @@ runs:
       run: |
         echo "Creating Terraform plan..."
         terraform plan \
-          -var-file="${{ inputs.tfvars-file }}" \
+          -var-file="terraform.tfvars" \
           -out=tfplan \
           -detailed-exitcode || EXIT_CODE=$?
 
