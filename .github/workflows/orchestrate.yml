@@ -464,7 +464,7 @@ jobs:
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
-          service-name: ${{ needs.determine-config.outputs.app_env }}/user-service
+          service-name: user-service
           dockerfile-path: ./services/user-service
           image-tag: ${{ needs.determine-config.outputs.user_tag }}
           aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
@@ -477,7 +477,7 @@ jobs:
         with:
           aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
           aws-region: ${{ env.AWS_REGION }}
-          service-name: ${{ needs.determine-config.outputs.app_env }}/order-service
+          service-name: order-service
           dockerfile-path: ./services/order-service
           image-tag: ${{ needs.determine-config.outputs.order_tag }}
           aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
@@ -511,7 +511,7 @@ jobs:
       - name: Run Trivy vulnerability scan
         uses: aquasecurity/trivy-action@0.20.0
         with:
-          image-ref: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ matrix.service }}:${{ needs.determine-config.outputs.user_tag }}
+          image-ref: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/dev/services:${{ matrix.service == 'user-service' && needs.determine-config.outputs.user_tag || needs.determine-config.outputs.order_tag }}
           format: 'sarif'
           output: 'trivy-results-${{ matrix.service }}.sarif'
           severity: 'HIGH,CRITICAL'

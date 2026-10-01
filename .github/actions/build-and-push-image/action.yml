@@ -55,31 +55,32 @@ runs:
       shell: bash
       env:
         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: ${{ inputs.service-name }}
+        ECR_REPOSITORY: dev/services
+        SERVICE_NAME: ${{ inputs.service-name }}
         IMAGE_TAG: ${{ inputs.image-tag }}
         ENV_TAG: ${{ inputs.environment-tag }}
       run: |
-        # Build Docker image
+        # Build Docker image with service-specific tags
         docker build \
-          -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
-          -t $ECR_REGISTRY/$ECR_REPOSITORY:$ENV_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:$SERVICE_NAME-$IMAGE_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY:$SERVICE_NAME-$ENV_TAG \
           ${{ inputs.dockerfile-path }}
 
         # Push images to ECR
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$ENV_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$SERVICE_NAME-$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$SERVICE_NAME-$ENV_TAG
 
         # Get image digest
-        IMAGE_DIGEST=$(docker images --no-trunc --quiet $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG)
+        IMAGE_DIGEST=$(docker images --no-trunc --quiet $ECR_REGISTRY/$ECR_REPOSITORY:$SERVICE_NAME-$IMAGE_TAG)
 
         # Output image URI
-        echo "image-uri=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+        echo "image-uri=$ECR_REGISTRY/$ECR_REPOSITORY:$SERVICE_NAME-$IMAGE_TAG" >> $GITHUB_OUTPUT
         echo "image-digest=$IMAGE_DIGEST" >> $GITHUB_OUTPUT
 
         # Print summary
         echo "✅ Image built and pushed successfully"
-        echo "📦 Image URI: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-        echo "🏷️  Tags: $IMAGE_TAG, $ENV_TAG"
+        echo "📦 Image URI: $ECR_REGISTRY/$ECR_REPOSITORY:$SERVICE_NAME-$IMAGE_TAG"
+        echo "🏷️  Tags: $SERVICE_NAME-$IMAGE_TAG, $SERVICE_NAME-$ENV_TAG"
 
     - name: Print image details
       shell: bash
