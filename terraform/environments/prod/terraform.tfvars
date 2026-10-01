@@ -23,3 +23,4 @@ kubernetes_version  = "1.28"
 eks_desired_size    = 3
 eks_min_size        = 2
 eks_max_size        = 10
+eks_instance_types  = ["t3.large"]
