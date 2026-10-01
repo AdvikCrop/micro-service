@@ -53,16 +53,10 @@ variable "db_allocated_storage" {
   type        = number
 }
 
-variable "db_username" {
-  description = "RDS master username"
+variable "db_secret_arn" {
+  description = "AWS Secrets Manager secret ARN for database credentials"
   type        = string
-  sensitive   = true
-}
-
-variable "db_password" {
-  description = "RDS master password"
-  type        = string
-  sensitive   = true
+  default     = "arn:aws:secretsmanager:us-east-1:023644376175:secret:microservices-db-credentials-dev-OBZIPW"
 }
 
 variable "container_port" {

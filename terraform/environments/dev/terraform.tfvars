@@ -9,8 +9,16 @@ availability_zones   = ["us-east-1a", "us-east-1b"]
 
 db_instance_class    = "db.t3.micro"
 db_allocated_storage = 20
+db_secret_arn        = "arn:aws:secretsmanager:us-east-1:023644376175:secret:microservices-db-credentials-dev-OBZIPW"
 
 container_port   = 8000
 desired_count    = 1
 container_cpu    = 256
 container_memory = 512
+
+user_service_image  = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/user-service:latest"
+order_service_image = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/order-service:latest"
+kubernetes_version  = "1.28"
+eks_desired_size    = 1
+eks_min_size        = 1
+eks_max_size        = 2
