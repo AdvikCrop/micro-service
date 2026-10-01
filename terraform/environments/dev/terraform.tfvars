@@ -16,9 +16,9 @@ desired_count    = 1
 container_cpu    = 256
 container_memory = 512
 
-user_service_image  = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/user-service:latest"
-order_service_image = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/order-service:latest"
-kubernetes_version  = "1.28"
+user_service_image  = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/services:user-service"
+order_service_image = "023644376175.dkr.ecr.us-east-1.amazonaws.com/dev/services:order-service"
+kubernetes_version  = "1.36"
 eks_desired_size    = 1
 eks_min_size        = 1
 eks_max_size        = 2
