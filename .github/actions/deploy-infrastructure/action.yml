@@ -118,7 +118,7 @@ runs:
 
     - name: Upload Terraform Plan
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: terraform-plan-${{ inputs.environment }}
         path: ${{ inputs.terraform-dir }}/${{ inputs.environment }}/tfplan
@@ -151,7 +151,7 @@ runs:
 
     - name: Upload Terraform Outputs
       if: inputs.action == 'apply' && always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: terraform-outputs-${{ inputs.environment }}
         path: ${{ inputs.terraform-dir }}/${{ inputs.environment }}/terraform-outputs.json

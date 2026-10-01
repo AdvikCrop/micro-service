@@ -233,7 +233,7 @@ runs:
 
     - name: Upload deployment manifest
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: helm-manifest-${{ inputs.environment }}
         path: /tmp/helm-dry-run.yaml
