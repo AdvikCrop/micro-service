@@ -36,34 +36,6 @@ module "rds" {
   db_password           = local.db_credentials.password
 }
 
-resource "aws_secretsmanager_secret" "db_username" {
-  name                    = "${var.project_name}-db-username-${local.environment}"
-  recovery_window_in_days = 30
-
-  tags = {
-    Name = "${var.project_name}-db-username"
-  }
-}
-
-resource "aws_secretsmanager_secret_version" "db_username" {
-  secret_id     = aws_secretsmanager_secret.db_username.id
-  secret_string = var.db_username
-}
-
-resource "aws_secretsmanager_secret" "db_password" {
-  name                    = "${var.project_name}-db-password-${local.environment}"
-  recovery_window_in_days = 30
-
-  tags = {
-    Name = "${var.project_name}-db-password"
-  }
-}
-
-resource "aws_secretsmanager_secret_version" "db_password" {
-  secret_id     = aws_secretsmanager_secret.db_password.id
-  secret_string = var.db_password
-}
-
 resource "aws_lb" "main" {
   name               = "${var.project_name}-alb-${local.environment}"
   internal           = false
