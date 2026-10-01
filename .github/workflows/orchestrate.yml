@@ -390,8 +390,6 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    environment:
-      name: ${{ needs.deployment-config.outputs.app_env == 'prod' && 'prod' || 'build' }}
     strategy:
       matrix:
         service:
