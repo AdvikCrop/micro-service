@@ -438,7 +438,7 @@ jobs:
   # STAGE 3: BUILD DOCKER IMAGES
   # ============================================================================
   build-images:
-    needs: [determine-config, test]
+    needs: [determine-config]
     if: ${{ needs.determine-config.outputs.build_images == 'true' }}
     runs-on: ubuntu-latest
     permissions:
