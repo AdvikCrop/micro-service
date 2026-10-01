@@ -124,6 +124,30 @@ runs:
         path: ${{ inputs.terraform-dir }}/${{ inputs.environment }}/tfplan
         retention-days: 7
 
+    - name: Terraform Destroy Plan
+      id: destroy-plan
+      if: inputs.action == 'destroy'
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "Creating Terraform destroy plan..."
+        terraform plan \
+          -var-file="terraform.tfvars" \
+          -destroy \
+          -out=tfplan_destroy \
+          -detailed-exitcode || EXIT_CODE=$?
+
+        if [ "${EXIT_CODE:-0}" -eq 0 ]; then
+          echo "✅ No infrastructure to destroy"
+          echo "plan-exists=false" >> $GITHUB_OUTPUT
+        elif [ "${EXIT_CODE:-0}" -eq 2 ]; then
+          echo "✅ Infrastructure destruction plan created"
+          echo "plan-exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Terraform destroy plan failed"
+          exit 1
+        fi
+
     - name: Terraform Apply
       id: apply
       if: inputs.action == 'apply' && steps.plan.outputs.plan-exists == 'true'
@@ -137,6 +161,20 @@ runs:
           tfplan
         echo "✅ Terraform apply completed"
         echo "summary=Terraform infrastructure deployed successfully" >> $GITHUB_OUTPUT
+
+    - name: Terraform Destroy
+      id: destroy
+      if: inputs.action == 'destroy' && steps.destroy-plan.outputs.plan-exists == 'true'
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "🔥 DESTROYING Terraform infrastructure..."
+        terraform destroy \
+          -auto-approve \
+          -input=false \
+          -var-file="terraform.tfvars"
+        echo "✅ Terraform destroy completed"
+        echo "summary=Terraform infrastructure destroyed successfully" >> $GITHUB_OUTPUT
 
     - name: Get Terraform Outputs
       if: inputs.action == 'apply'
@@ -157,12 +195,23 @@ runs:
         path: ${{ inputs.terraform-dir }}/${{ inputs.environment }}/terraform-outputs.json
         retention-days: 30
 
-    - name: Show Plan Summary
-      if: steps.plan.outputs.plan-exists == 'true'
+    - name: Show Apply Plan Summary
+      if: inputs.action == 'apply' && steps.plan.outputs.plan-exists == 'true'
       shell: bash
       working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
       run: |
-        echo "📊 Infrastructure Changes:"
+        echo "📊 Infrastructure Changes (Apply):"
         terraform plan \
-          -var-file="${{ inputs.tfvars-file }}" \
+          -var-file="terraform.tfvars" \
           -no-color | grep -E "^(Plan:|No changes|.*create|.*update|.*destroy)" || true
+
+    - name: Show Destroy Plan Summary
+      if: inputs.action == 'destroy' && steps.destroy-plan.outputs.plan-exists == 'true'
+      shell: bash
+      working-directory: ${{ inputs.terraform-dir }}/${{ inputs.environment }}
+      run: |
+        echo "📊 Infrastructure to Destroy:"
+        terraform plan \
+          -var-file="terraform.tfvars" \
+          -destroy \
+          -no-color | grep -E "^(Plan:|No changes|.*destroy)" || true

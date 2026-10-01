@@ -103,6 +103,12 @@ on:
         type: boolean
         default: true
 
+      destroy_infrastructure:
+        description: 'Destroy infrastructure? (DESTRUCTIVE - requires approval)'
+        required: false
+        type: boolean
+        default: false
+
 env:
   AWS_REGION: us-east-1
   TERRAFORM_VERSION: 1.5.0
@@ -523,13 +529,13 @@ jobs:
   # ============================================================================
   deploy-infrastructure:
     needs: [determine-config, validate, terraform-plan, terraform-drift]
-    if: ${{ needs.determine-config.outputs.deploy_infra == 'true' }}
+    if: ${{ needs.determine-config.outputs.deploy_infra == 'true' && github.event.inputs.infra_action == 'apply' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     environment:
-      name: ${{ needs.determine-config.outputs.infra_env }}
+      name: ${{ needs.determine-config.outputs.infra_env == 'prod' && 'prod' || 'dev' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -554,6 +560,46 @@ jobs:
           state-bucket: ${{ secrets.TERRAFORM_STATE_BUCKET }}
           state-key: 'microservices/${{ needs.determine-config.outputs.infra_env }}/terraform.tfstate'
           action: ${{ github.event.inputs.infra_action }}
+
+  # ============================================================================
+  # STAGE 5B: DESTROY INFRASTRUCTURE (APPROVAL GATE)
+  # ============================================================================
+  destroy-infrastructure:
+    needs: [determine-config, validate]
+    if: ${{ github.event.inputs.destroy_infrastructure == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: ${{ needs.determine-config.outputs.infra_env == 'prod' && 'prod' || 'dev' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Display infrastructure destruction parameters
+        run: |
+          echo "🔥 Infrastructure Destruction"
+          echo "Environment: ${{ needs.determine-config.outputs.infra_env }}"
+          echo "Action: destroy"
+          echo "Terraform Version: ${{ env.TERRAFORM_VERSION }}"
+          echo ""
+          echo "⚠️  WARNING: This will DESTROY all infrastructure in ${{ needs.determine-config.outputs.infra_env }}"
+          echo "✅ Approval GRANTED by GitHub Environment: ${{ needs.determine-config.outputs.infra_env }}"
+
+      - name: Destroy infrastructure
+        uses: ./.github/actions/deploy-infrastructure/
+        with:
+          aws-account-id: ${{ secrets.AWS_ACCOUNT_ID }}
+          aws-region: ${{ env.AWS_REGION }}
+          terraform-version: ${{ env.TERRAFORM_VERSION }}
+          environment: ${{ needs.determine-config.outputs.infra_env }}
+          terraform-dir: 'terraform/environments'
+          tfvars-file: 'terraform/environments/${{ needs.determine-config.outputs.infra_env }}/terraform.tfvars'
+          aws-role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          state-bucket: ${{ secrets.TERRAFORM_STATE_BUCKET }}
+          state-key: 'microservices/${{ needs.determine-config.outputs.infra_env }}/terraform.tfstate'
+          action: 'destroy'
 
   # ============================================================================
   # STAGE 6: DEPLOY APPLICATION
